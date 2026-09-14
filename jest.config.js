@@ -5,4 +5,6 @@ module.exports = {
   roots: ['<rootDir>/tests'],
   clearMocks: true,
   collectCoverageFrom: ['src/**/*.ts'],
+  globalSetup: '<rootDir>/tests/integration/globalSetup.js',
+  globalTeardown: '<rootDir>/tests/integration/globalTeardown.js',
 };
