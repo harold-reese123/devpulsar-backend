@@ -1,12 +1,12 @@
 # DevPulsar Backend
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/devpulsar/backend/ci.yml?branch=main&style=flat-square)
+![Build Status](https://img.shields.io/github/actions/workflow/status/devpulsar/devpulsar-backend/ci.yml?branch=main&style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen?style=flat-square)
 
-The backend API layer for **DevPulsar** — a developer contribution tracking platform built on the Stellar blockchain. DevPulsar monitors open-source contributors' merged GitHub pull requests, assigns on-chain points, and distributes USDC rewards at the end of each wave cycle.
+The backend API layer for **DevPulsar** — a developer contribution tracking platform built on the Stellar blockchain. DevPulsar monitors open-source contributors' merged GitHub pull requests, assigns points, and distributes USDC rewards at the end of each wave cycle.
 
-This service sits between GitHub, Stellar, and the DevPulsar frontend, handling everything from webhook ingestion and contribution scoring to reward distribution and KYC verification.
+This service sits between GitHub, Stellar, and the [DevPulsar frontend](https://github.com/devpulsar/devpulsar-frontend). **This README's API contract is written to match what the frontend already expects and has been built against** — see [Reconciliation Notes](#reconciliation-notes) at the bottom for what changed from the original draft.
 
 ---
 
@@ -18,38 +18,37 @@ This service sits between GitHub, Stellar, and the DevPulsar frontend, handling 
 - [Prerequisites](#prerequisites)
 - [Installation & Setup](#installation--setup)
 - [Project Structure](#project-structure)
+- [Identity Model](#identity-model)
 - [API Endpoints](#api-endpoints)
 - [Environment Variables](#environment-variables)
 - [GitHub Webhook Setup](#github-webhook-setup)
 - [Database Setup](#database-setup)
 - [Running Tests](#running-tests)
-- [Contributing](#contributing)
+- [Reconciliation Notes](#reconciliation-notes)
 - [License](#license)
 
 ---
 
 ## Project Overview
 
-DevPulsar Backend is a RESTful API server built with Node.js and TypeScript. It serves as the central orchestration layer responsible for:
+DevPulsar Backend is a RESTful API server built with Node.js and TypeScript. It is responsible for:
 
-- **Ingesting GitHub events** via webhooks to detect and record merged pull requests
-- **Scoring contributions** using a configurable points calculation engine
+- **Ingesting GitHub events** via webhooks to detect and record merged pull requests (v1: seeded/mocked, real ingestion is a later phase)
+- **Scoring contributions** using a points calculation engine (Trivial/Medium/High tiers, per Drips Wave convention)
 - **Managing wave cycles** — time-bounded contribution periods that determine reward eligibility
-- **Distributing USDC rewards** on-chain via the Stellar network at the close of each wave
-- **Enforcing KYC verification** for contributors crossing high-value payout thresholds
-- **Exposing a REST API** consumed by the DevPulsar frontend and third-party integrations
+- **Queuing USDC rewards** at the close of each wave, claimable by contributors via the frontend
+- **Exposing a REST API** consumed directly by the DevPulsar frontend, keyed by Stellar wallet address
 
 ---
 
 ## Key Features
 
-- **GitHub Webhook Listener** — Receives `pull_request` events, validates signatures, and records merged PRs in real time
-- **Wave Cycle Management** — Create, activate, and close contribution waves; automate reward snapshots at cycle end
-- **Points Calculation Engine** — Configurable scoring rules based on PR complexity, repository weight, and contributor history
-- **USDC Reward Distribution** — Trustless on-chain payouts via Stellar SDK using the USDC asset contract
-- **KYC Verification** — Flags and gates high-value payouts pending identity verification
-- **Contributor Profiles** — Aggregated stats per contributor including total points, wave history, and payout records
-- **Idempotent Event Processing** — Deduplication of webhook events to prevent double-counting contributions
+- **Wallet-Address-Keyed API** — no separate login/JWT flow; a connected Stellar wallet address is the identity, matching how the frontend already works
+- **Wave Cycle Management** — current wave + full history, exposed as dedicated endpoints
+- **Points Calculation Engine** — configurable scoring rules based on PR complexity (Trivial=100 / Medium=150 / High=200, matching Drips Wave conventions)
+- **Leaderboard** — single endpoint, toggled by `scope` query param (`wave` | `all-time`)
+- **Reward Claiming** — contributor-initiated claim endpoint (not fully automatic payout), matching the frontend's claim-button UX
+- **Idempotent Event Processing** — dedup of webhook events to prevent double-counting contributions (future phase)
 
 ---
 
@@ -60,11 +59,10 @@ DevPulsar Backend is a RESTful API server built with Node.js and TypeScript. It 
 | Runtime | Node.js 18+ |
 | Language | TypeScript 5 |
 | Framework | Express.js |
-| Database | PostgreSQL 15 |
-| ORM / Query Builder | Prisma |
+| Database | MongoDB |
+| ODM | Mongoose |
 | Blockchain SDK | Stellar SDK (`@stellar/stellar-sdk`) |
-| GitHub Integration | GitHub REST API + Webhooks |
-| Authentication | JWT + HMAC signature verification |
+| GitHub Integration | GitHub REST API + Webhooks (later phase) |
 | Testing | Jest + Supertest |
 | Process Manager | PM2 |
 
@@ -72,62 +70,27 @@ DevPulsar Backend is a RESTful API server built with Node.js and TypeScript. It 
 
 ## Prerequisites
 
-Before getting started, make sure you have the following installed:
-
-- **Node.js** `>= 18.0.0` ([download](https://nodejs.org))
+- **Node.js** `>= 18.0.0`
 - **npm** `>= 9.0.0` or **Yarn** `>= 1.22`
-- **PostgreSQL** `>= 15` running locally or via a managed service
-- A **Stellar account** with testnet/mainnet funding ([Stellar Laboratory](https://laboratory.stellar.org))
-- A **GitHub App or webhook** configured on the target repository (see [GitHub Webhook Setup](#github-webhook-setup))
+- **MongoDB** `>= 6` running locally or via a managed service (e.g. Atlas)
+- A **Stellar account** for the distribution wallet (testnet to start — [Stellar Laboratory](https://laboratory.stellar.org))
 
 ---
 
 ## Installation & Setup
 
-### 1. Clone the repository
-
 ```bash
-git clone https://github.com/devpulsar/backend.git
-cd backend
-```
-
-### 2. Install dependencies
-
-```bash
+git clone https://github.com/devpulsar/devpulsar-backend.git
+cd devpulsar-backend
 npm install
-# or
-yarn install
-```
-
-### 3. Configure environment variables
-
-```bash
 cp .env.example .env
-```
-
-Edit `.env` with your values. See [Environment Variables](#environment-variables) for the full reference.
-
-### 4. Run database migrations
-
-```bash
-npm run db:migrate
-```
-
-### 5. (Optional) Seed the database
-
-```bash
 npm run db:seed
-```
-
-### 6. Start the development server
-
-```bash
 npm run dev
 ```
 
-The server will start on the port defined in your `.env` (default: `3000`).
+The server starts on the port defined in `.env` (default `4000` — deliberately different from the frontend's Vite dev port `5173`).
 
-### 7. Build for production
+Build for production:
 
 ```bash
 npm run build
@@ -140,266 +103,159 @@ npm start
 
 ```
 src/
-├── routes/             # Express route definitions
-│   ├── contributors.ts # Contributor profile endpoints
-│   ├── waves.ts        # Wave cycle management endpoints
-│   ├── contributions.ts# Contribution record endpoints
-│   └── webhooks.ts     # GitHub webhook ingestion endpoint
+├── routes/
+│   ├── contributions.ts   # GET /contributions/:address
+│   ├── wave.ts             # GET /wave/current, GET /wave/history
+│   ├── leaderboard.ts      # GET /leaderboard
+│   ├── rewards.ts          # GET /rewards/:address, POST /rewards/claim
+│   └── webhooks.ts         # POST /webhooks/github (future phase)
 │
-├── services/           # Core business logic
-│   ├── github.service.ts       # GitHub API client & webhook validation
-│   ├── wave.service.ts         # Wave lifecycle management
+├── services/
 │   ├── points.service.ts       # Points calculation engine
-│   ├── stellar.service.ts      # Stellar SDK wrapper & USDC distribution
-│   ├── kyc.service.ts          # KYC verification gating logic
-│   └── contributor.service.ts  # Contributor profile aggregation
+│   ├── wave.service.ts         # Wave lifecycle management
+│   ├── stellar.service.ts      # Stellar SDK wrapper, USDC transfers
+│   └── contribution.service.ts # Contribution record aggregation
 │
-├── models/             # Prisma schema & typed model interfaces
-│   ├── schema.prisma   # Database schema definition
-│   ├── contributor.ts  # Contributor model types
-│   ├── wave.ts         # Wave model types
-│   └── contribution.ts # Contribution model types
+├── models/                 # Mongoose schemas
+│   ├── Contribution.ts
+│   ├── Wave.ts
+│   ├── RewardDistribution.ts
+│   └── Contributor.ts      # keyed by walletAddress, not an internal id
 │
-├── utils/              # Shared utilities and helpers
-│   ├── logger.ts       # Structured logging (Winston)
-│   ├── crypto.ts       # HMAC signature verification helpers
-│   ├── pagination.ts   # Cursor-based pagination helpers
-│   └── errors.ts       # Typed error classes and HTTP error factory
+├── middleware/
+│   ├── walletAddress.ts    # reads X-Wallet-Address header, attaches req.walletAddress
+│   ├── validate.ts         # request schema validation (Zod)
+│   └── rateLimiter.ts
 │
-├── middleware/         # Express middleware
-│   ├── auth.ts         # JWT authentication middleware
-│   ├── validate.ts     # Request schema validation (Zod)
-│   └── rateLimiter.ts  # Rate limiting per IP/contributor
+├── utils/
+│   ├── logger.ts
+│   ├── pagination.ts
+│   └── errors.ts
 │
-├── jobs/               # Scheduled background jobs
-│   ├── waveClose.job.ts        # Auto-closes waves at deadline
-│   └── rewardDistribution.job.ts # Triggers USDC payouts post-wave
+├── jobs/
+│   └── waveClose.job.ts    # auto-closes waves at deadline, snapshots leaderboard
 │
-├── app.ts              # Express app initialization
-└── server.ts           # HTTP server entry point
+├── app.ts
+└── server.ts
 ```
+
+---
+
+## Identity Model
+
+**There is no separate login step and no internal `contributorId` exposed in the API.** The frontend already identifies users by their connected Stellar wallet address (see its `X-Wallet-Address` request header, set automatically by its Axios interceptor). The backend treats that address as the primary key for all contributor-scoped data.
+
+Internally, a `Contributor` document may still have a Mongo `_id`, but no route requires the client to know or pass it — every contributor-scoped endpoint takes the wallet address directly in the path or header.
+
+If GitHub-identity linking (associating a wallet address with a GitHub username) is added later, that's an additive field on the `Contributor` model, not a new identity scheme.
 
 ---
 
 ## API Endpoints
 
-### Waves
+No version prefix (`/api/v1/...`) for now — kept flat to match what the frontend already calls. Add versioning later if/when there's a breaking-change need.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/v1/waves` | List all wave cycles |
-| `GET` | `/api/v1/waves/:id` | Get a single wave by ID |
-| `POST` | `/api/v1/waves` | Create a new wave cycle |
-| `PATCH` | `/api/v1/waves/:id` | Update wave metadata |
-| `POST` | `/api/v1/waves/:id/close` | Manually close a wave and trigger payouts |
-| `GET` | `/api/v1/waves/:id/leaderboard` | Get ranked contributors for a wave |
+| `GET` | `/contributions/:address` | Merged PRs + points for a contributor, identified by wallet address |
+| `GET` | `/wave/current` | Metadata for the currently active wave (`id`, `label`, `status`, `startAt`, `endAt`, `totalPointsDistributed`, `totalRewardsUsdc`, `participantCount`) |
+| `GET` | `/wave/history` | List of past, closed wave cycles |
+| `GET` | `/leaderboard?scope=wave\|all-time` | Ranked contributor list. `scope` defaults to `wave` if omitted |
+| `GET` | `/rewards/:address` | Reward history + claimable balance for a contributor |
+| `POST` | `/rewards/claim` | Initiate a claim of the caller's full claimable balance. Body: `{ address: string }`. Returns a queued/pending distribution; actual on-chain signing happens via the frontend's wallet, not server-held keys — see note below |
+| `POST` | `/webhooks/github` | GitHub webhook receiver (**not implemented in v1** — stub route returns `501`) |
 
-### Contributions
+### Response shape notes (matching frontend types exactly)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/contributions` | List all contributions (paginated) |
-| `GET` | `/api/v1/contributions/:id` | Get a single contribution record |
-| `GET` | `/api/v1/contributions/wave/:waveId` | List contributions for a specific wave |
-| `GET` | `/api/v1/contributions/contributor/:contributorId` | List contributions by contributor |
-| `DELETE` | `/api/v1/contributions/:id` | Remove a contribution (admin only) |
+- All USDC amounts (`totalRewardsUsdc`, `amountUsdc`, `claimableUsdc`) are serialized as **decimal strings**, e.g. `"1250.50"` — never raw numbers, to avoid float precision loss. The frontend's `formatUsdc()` util assumes this.
+- Timestamps (`startAt`, `endAt`, `distributedAt`, `mergedAt`) are **ISO 8601 strings**.
+- `Contribution.status` is one of: `"points_assigned" | "reward_queued" | "rewarded"`.
+- `RewardDistribution.status` is one of: `"claimable" | "claimed"`; `txHash` is `null` until claimed.
+- Wave `label` (e.g. `"Wave 12"`) is a real stored field, not derived client-side from an id/number.
 
-### Contributors
+### On claiming
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/contributors` | List all contributors |
-| `GET` | `/api/v1/contributors/:id` | Get contributor profile and stats |
-| `GET` | `/api/v1/contributors/:id/payouts` | Get payout history for a contributor |
-| `PATCH` | `/api/v1/contributors/:id/kyc` | Update KYC verification status |
-| `GET` | `/api/v1/contributors/:id/stellar` | Get linked Stellar account details |
-
-### Webhooks
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/webhooks/github` | GitHub webhook receiver (HMAC-verified) |
+`POST /rewards/claim` marks a distribution as claim-initiated server-side and returns the transaction parameters needed for the **frontend to build and sign via the contributor's own wallet** (Stellar Wallets Kit) — the backend does not hold contributor funds or sign on their behalf. The frontend's current `claimReward()` is a stub that no-ops; wiring this up for real is a follow-up phase once the reward contract/distribution mechanism is finalized.
 
 ---
 
 ## Environment Variables
 
-Create a `.env` file at the project root. All variables marked **required** must be set before the server will start.
-
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PORT` | No | `3000` | Port the HTTP server listens on |
-| `NODE_ENV` | No | `development` | Runtime environment (`development`, `production`, `test`) |
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/devpulsar`) |
-| `JWT_SECRET` | Yes | — | Secret key used to sign and verify JWTs |
-| `GITHUB_WEBHOOK_SECRET` | Yes | — | Secret token used to verify GitHub webhook HMAC signatures |
-| `GITHUB_APP_ID` | No | — | GitHub App ID (if using GitHub App auth instead of PAT) |
-| `GITHUB_PRIVATE_KEY` | No | — | GitHub App private key (PEM format) |
-| `GITHUB_TOKEN` | No | — | Personal access token for GitHub REST API calls |
-| `STELLAR_NETWORK` | Yes | `testnet` | Stellar network to connect to (`testnet` or `mainnet`) |
-| `STELLAR_SECRET_KEY` | Yes | — | Secret key of the Stellar account used to sign reward transactions |
-| `STELLAR_PUBLIC_KEY` | Yes | — | Public key of the Stellar distribution account |
-| `USDC_CONTRACT_ADDRESS` | Yes | — | Stellar contract/asset address for USDC |
-| `KYC_THRESHOLD_USDC` | No | `500` | USDC amount above which KYC verification is required before payout |
-| `LOG_LEVEL` | No | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
+| `PORT` | No | `4000` | HTTP server port |
+| `NODE_ENV` | No | `development` | `development` \| `production` \| `test` |
+| `MONGODB_URI` | Yes | — | MongoDB connection string |
+| `STELLAR_NETWORK` | Yes | `testnet` | `testnet` \| `mainnet` — should match the frontend's `VITE_STELLAR_NETWORK` |
+| `STELLAR_DISTRIBUTION_PUBLIC_KEY` | Yes | — | Public key of the account funding USDC rewards |
+| `STELLAR_DISTRIBUTION_SECRET_KEY` | Yes | — | Secret key for the distribution account (server-side signing for future automated flows only — never used to sign a contributor's claim) |
+| `USDC_ASSET_ISSUER` | Yes | — | Issuer address of the USDC asset used on the configured network |
+| `CORS_ORIGIN` | Yes | — | Frontend origin allowed to call this API (e.g. `http://localhost:5173`) |
+| `LOG_LEVEL` | No | `info` | `debug` \| `info` \| `warn` \| `error` |
+| `GITHUB_WEBHOOK_SECRET` | No | — | Unused until webhook ingestion phase; reserved |
 
 Example `.env`:
 
 ```env
-PORT=3000
+PORT=4000
 NODE_ENV=development
-DATABASE_URL=postgresql://devpulsar:secret@localhost:5432/devpulsar_db
-JWT_SECRET=your_jwt_secret_here
-GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+MONGODB_URI=mongodb://localhost:27017/devpulsar
 STELLAR_NETWORK=testnet
-STELLAR_SECRET_KEY=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-STELLAR_PUBLIC_KEY=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-USDC_CONTRACT_ADDRESS=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
-KYC_THRESHOLD_USDC=500
+STELLAR_DISTRIBUTION_PUBLIC_KEY=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+STELLAR_DISTRIBUTION_SECRET_KEY=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+USDC_ASSET_ISSUER=GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+CORS_ORIGIN=http://localhost:5173
 LOG_LEVEL=info
 ```
 
-> Never commit your `.env` file. It is listed in `.gitignore` by default.
+> Never commit your `.env` file. It is listed in `.gitignore`.
 
 ---
 
 ## GitHub Webhook Setup
 
-DevPulsar listens for `pull_request` events on any repository you want to track.
-
-### 1. Generate a webhook secret
-
-```bash
-openssl rand -hex 32
-```
-
-Copy the output and set it as `GITHUB_WEBHOOK_SECRET` in your `.env`.
-
-### 2. Register the webhook on GitHub
-
-1. Go to your repository on GitHub
-2. Navigate to **Settings → Webhooks → Add webhook**
-3. Set the **Payload URL** to your server's public endpoint:
-   ```
-   https://your-domain.com/api/v1/webhooks/github
-   ```
-4. Set **Content type** to `application/json`
-5. Paste your generated secret into the **Secret** field
-6. Under **Which events would you like to trigger this webhook?**, select **Let me select individual events** and check **Pull requests**
-7. Ensure **Active** is checked and click **Add webhook**
-
-### 3. Verify delivery
-
-GitHub will send a `ping` event on creation. Check the **Recent Deliveries** tab to confirm a `200 OK` response from your server.
-
-> For local development, use [ngrok](https://ngrok.com) or [smee.io](https://smee.io) to expose your local server to the internet.
-
-```bash
-npx smee-client --url https://smee.io/your-channel-id --target http://localhost:3000/api/v1/webhooks/github
-```
+**Not implemented in v1.** `POST /webhooks/github` exists as a route stub returning `501 Not Implemented`. Contribution data is seeded/mocked for now (see [Database Setup](#database-setup)). Real webhook ingestion — signature verification, `pull_request` event handling, points assignment on merge — is a planned follow-up phase, at which point this section will be filled in with the real setup steps.
 
 ---
 
 ## Database Setup
 
-DevPulsar uses **Prisma** as the ORM. The schema is defined in `src/models/schema.prisma`.
-
-### Run migrations
-
 ```bash
-# Apply all pending migrations
-npm run db:migrate
-
-# Create a new migration after schema changes
-npm run db:migrate:create -- --name your_migration_name
-```
-
-### Seed the database
-
-Populates the database with initial wave configuration and test contributor data:
-
-```bash
+# Seed with realistic fake wave/contribution/leaderboard/reward data
 npm run db:seed
-```
 
-### Reset the database (destructive)
-
-```bash
+# Reset (destructive — do not run in production)
 npm run db:reset
 ```
 
-> This drops all tables and re-runs migrations from scratch. Do not run in production.
-
-### Open Prisma Studio
-
-```bash
-npm run db:studio
-```
+Seed data is intentionally shaped to match the frontend's mock data structures 1:1, so switching the frontend's `USE_MOCK_DATA` flag to `false` against a locally running backend should require no frontend code changes.
 
 ---
 
 ## Running Tests
 
-### Unit tests
-
-Tests for individual services and utilities, using mocked dependencies:
-
 ```bash
-npm run test:unit
-```
-
-### Integration tests
-
-End-to-end API tests against a real test database. Requires `DATABASE_URL` pointing to a test database:
-
-```bash
-npm run test:integration
-```
-
-### All tests
-
-```bash
-npm test
-```
-
-### Coverage report
-
-```bash
+npm run test:unit          # services/utils, mocked dependencies
+npm run test:integration   # real API tests against a test Mongo instance
+npm test                   # all
 npm run test:coverage
 ```
 
-Coverage output is written to `coverage/` and an HTML report is available at `coverage/lcov-report/index.html`.
-
 ---
 
-## Contributing
+## Reconciliation Notes
 
-Contributions are welcome. Please follow these steps:
+This README was revised from an initial draft to match the contract the frontend was already built against, rather than the reverse. Changes made:
 
-1. Fork the repository and create a feature branch from `main`:
-   ```bash
-   git checkout -b feat/your-feature-name
-   ```
-
-2. Make your changes, ensuring all existing tests pass and new functionality is covered by tests.
-
-3. Run the linter before committing:
-   ```bash
-   npm run lint
-   npm run lint:fix
-   ```
-
-4. Commit using [Conventional Commits](https://www.conventionalcommits.org/):
-   ```
-   feat: add wave auto-close job
-   fix: correct HMAC signature validation for GitHub webhooks
-   chore: update Stellar SDK to v12
-   ```
-
-5. Open a pull request against `main` with a clear description of the change and any relevant context.
-
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for the full code of conduct and contribution guidelines.
+1. **Identity model** — replaced internal `contributorId`-based routes with wallet-address-based routes (`/contributions/:address`, `/rewards/:address`), matching the frontend's `X-Wallet-Address` header pattern. No JWT/login flow.
+2. **Added `POST /rewards/claim`** — the original draft only had automatic payout via a background job with no contributor-initiated claim action; the frontend's UI requires an explicit claim endpoint.
+3. **Added a flat `GET /leaderboard?scope=`** — original draft only had `/waves/:id/leaderboard`, with no all-time view.
+4. **Added `GET /wave/current` and `GET /wave/history`** — original draft required listing all waves and filtering client-side.
+5. **Dropped the `/api/v1` prefix** — kept flat to match what the frontend already calls; can be added later behind a proxy rule if needed without a frontend change.
+6. **Dropped JWT auth requirement** — wallet address is sufficient identity for v1; add real auth if/when write actions beyond claiming are introduced.
+7. **USDC amounts specified as strings everywhere**, not numbers — matches the precision fix already made in the frontend.
+8. **Switched Postgres/Prisma → MongoDB/Mongoose** — matches the primary stack used elsewhere.
+9. **Documented the exact `ContributionStatus` and `RewardDistribution.status` enums** the frontend already assumed, rather than leaving them unspecified.
 
 ---
 
