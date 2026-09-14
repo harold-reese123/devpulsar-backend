@@ -1,5 +1,8 @@
 // Runs once, in Jest's main process, before any test file. Not transformed
 // by ts-jest, so it registers ts-node itself to require the TS seed module.
+// Must stay CommonJS: this needs synchronous require() ordering (register
+// ts-node, *then* require the TS module) that ES import can't express here.
+/* eslint-disable @typescript-eslint/no-var-requires */
 require('ts-node/register/transpile-only');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');

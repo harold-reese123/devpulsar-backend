@@ -7,6 +7,7 @@ import { contributionsRouter } from './routes/contributions';
 import { waveRouter } from './routes/wave';
 import { leaderboardRouter } from './routes/leaderboard';
 import { rewardsRouter } from './routes/rewards';
+import { webhooksRouter } from './routes/webhooks';
 
 export function createApp() {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp() {
   app.use('/wave', waveRouter);
   app.use('/leaderboard', leaderboardRouter);
   app.use('/rewards', rewardsRouter);
+  app.use('/webhooks', webhooksRouter);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' });

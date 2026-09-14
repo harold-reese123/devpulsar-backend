@@ -10,7 +10,7 @@ import { Schema } from 'mongoose';
 export function applyJsonTransform(schema: Schema, hiddenFields: string[] = []) {
   schema.set('toJSON', {
     virtuals: true,
-    transform: (_doc, ret: Record<string, any>) => {
+    transform: (_doc, ret: Record<string, unknown>) => {
       delete ret._id;
       delete ret.__v;
       for (const field of hiddenFields) {

@@ -1,6 +1,10 @@
 import { NextFunction, Request, Response } from 'express';
 
 declare global {
+  // `declare global { namespace X }` is the required TS syntax for
+  // augmenting an existing ambient namespace like Express's — there's no
+  // ES2015-module equivalent for this kind of declaration merging.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /** The connected wallet making the request, from the frontend's X-Wallet-Address header. */
