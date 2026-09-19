@@ -1,12 +1,12 @@
 # DevPulsar Backend
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/devpulsar/devpulsar-backend/ci.yml?branch=main&style=flat-square)
+![Build Status](https://img.shields.io/github/actions/workflow/status/harold-reese123/devpulsar-backend/ci.yml?branch=main&style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen?style=flat-square)
 
 The backend API layer for **DevPulsar** — a developer contribution tracking platform built on the Stellar blockchain. DevPulsar monitors open-source contributors' merged GitHub pull requests, assigns points, and distributes USDC rewards at the end of each wave cycle.
 
-This service sits between GitHub, Stellar, and the [DevPulsar frontend](https://github.com/devpulsar/devpulsar-frontend). **This README's API contract is written to match what the frontend already expects and has been built against** — see [Reconciliation Notes](#reconciliation-notes) at the bottom for what changed from the original draft.
+This service sits between GitHub, Stellar, and the [DevPulsar frontend](https://github.com/harold-reese123/devpulsar-frontend). **This README's API contract is written to match what the frontend already expects and has been built against** — see [Reconciliation Notes](#reconciliation-notes) at the bottom for what changed from the original draft.
 
 ---
 
@@ -80,7 +80,7 @@ DevPulsar Backend is a RESTful API server built with Node.js and TypeScript. It 
 ## Installation & Setup
 
 ```bash
-git clone https://github.com/devpulsar/devpulsar-backend.git
+git clone https://github.com/harold-reese123/devpulsar-backend.git
 cd devpulsar-backend
 npm install
 cp .env.example .env
@@ -108,13 +108,12 @@ src/
 │   ├── wave.ts             # GET /wave/current, GET /wave/history
 │   ├── leaderboard.ts      # GET /leaderboard
 │   ├── rewards.ts          # GET /rewards/:address, POST /rewards/claim
-│   └── webhooks.ts         # POST /webhooks/github (future phase)
+│   └── webhooks.ts         # POST /webhooks/github (stub, returns 501 — see GitHub Webhook Setup)
 │
 ├── services/
-│   ├── points.service.ts       # Points calculation engine
-│   ├── wave.service.ts         # Wave lifecycle management
-│   ├── stellar.service.ts      # Stellar SDK wrapper, USDC transfers
-│   └── contribution.service.ts # Contribution record aggregation
+│   ├── wave.service.ts         # Wave lookup (current/history)
+│   ├── reward.service.ts       # Reward distribution lookup, claimable-balance summing
+│   └── contribution.service.ts # Contribution lookup, leaderboard aggregation
 │
 ├── models/                 # Mongoose schemas
 │   ├── Contribution.ts
@@ -124,20 +123,22 @@ src/
 │
 ├── middleware/
 │   ├── walletAddress.ts    # reads X-Wallet-Address header, attaches req.walletAddress
-│   ├── validate.ts         # request schema validation (Zod)
-│   └── rateLimiter.ts
+│   └── validate.ts         # request schema validation (Zod)
 │
 ├── utils/
 │   ├── logger.ts
-│   ├── pagination.ts
-│   └── errors.ts
+│   ├── errors.ts
+│   └── mongooseJson.ts     # { id, ...fields } response serialization
 │
-├── jobs/
-│   └── waveClose.job.ts    # auto-closes waves at deadline, snapshots leaderboard
+├── scripts/
+│   ├── seed.ts             # CLI entrypoint for db:seed / db:reset
+│   └── seedDatabase.ts     # seeding logic (faker-generated waves/contributions/rewards)
 │
 ├── app.ts
 └── server.ts
 ```
+
+Not yet implemented, and intentionally not listed above as if they were: a dedicated points-calculation engine (points are currently assigned by the seed script, not computed from real PR complexity), a Stellar SDK service wrapper (no on-chain calls are made from the backend yet), a scheduled wave-close job (waves are opened/closed via seed data, not a timer), request rate limiting, and server-side pagination on list endpoints (`/contributions/:address`, `/rewards/:address` return full arrays). These are real roadmap items, not abandoned files — they'll be added to this tree once they exist.
 
 ---
 
